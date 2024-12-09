@@ -1,41 +1,50 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.8;
 
-import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-
+import "./PriceConverter.sol";
 
 contract FundMe{
 
+    using PriceConverter for uint256;
 
+    address[] public funders;
+
+    mapping (address => uint256) public addressToAmountFunded;
 
     uint256 public minimumUsd = 50 * 1e18;
 
+    address public owner;
+
+    constructor(){
+        owner = msg.sender;
+    }
+
     function fund() public payable {
         // want to be able to set a minimun fund 
-        require(getConversionRate(msg.value ) > minimumUsd , "Didn`t sent enough!");
+        require(msg.value.getConversionRate()> minimumUsd , "Didn`t sent enough!");
+        funders.push(msg.sender);
+        addressToAmountFunded[msg.sender] = msg.value;
     }
 
-    function getPrice() view public returns (uint256){
-        // ABI
-        // Address  0x694AA1769357215DE4FAC081bf1f309aDC325306
-        //feed addresses->price feed addresses -> sepolia testnet
-         AggregatorV3Interface priceFeed = AggregatorV3Interface(0x694AA1769357215DE4FAC081bf1f309aDC325306);
-         (,int256 price,,,) = priceFeed.latestRoundData();
-         //ETH in term of USD
-         //3000.00000000
-         return uint256(price * 1e10);
+    function withdraw() public onlyOwner{
+        for (uint funderIndex = 0; funderIndex < funders.length; funderIndex ++) {
+            address funder = funders[funderIndex];
+            addressToAmountFunded[funder] = 0; // to remove from mapping
+        }
+        funders = new address[](0);
+        //transfer
+        // payable (msg.sender).transfer(address(this).balance);
+        //send
+        // bool sendSuccess = payable (msg.sender).send(address(this).balance);
+        // require(sendSuccess, "Send failed");
+        //call
+        (bool callSuccess, ) = payable (msg.sender).call{value:address(this).balance}("");
+        require(callSuccess, "Call failed");
     }
 
-    function getVersion() public view returns (uint256){
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(0x694AA1769357215DE4FAC081bf1f309aDC325306);
-        return priceFeed.version();
+    modifier onlyOwner{
+        require(msg.sender == owner , "Only Owner can call this function!");
+        _;
     }
-
-    function getConversionRate(uint256 ethAmount) view  public  returns (uint256){
-
-        uint256 ethPrice = getPrice();
-        uint256 ethAmountInUsd = (ethPrice * ethAmount)/ 1e18;
-        return ethAmountInUsd;
-
-    }
+   
 }
